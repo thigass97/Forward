@@ -1,0 +1,77 @@
+"""
+Convert .kvl files (SedSimple) back to ZMAP.GRID format
+
+Created for reverse conversion of the script developed by Endriw Rafael.
+
+"""
+
+import pandas as pd
+import numpy as np
+
+# Caminhos
+input_file = r"C:\Users\52598542843\Documents\Sedsimple\sedsimple\Models\GreenRiver\input\SS\maps\ISC\Bat_Inicial.kvl"
+output_file = r"C:\Users\52598542843\Documents\Bat_UniA_zmap.grid"
+
+# número de valores por linha no ZMAP
+values_per_line = 5
+
+# limites (os mesmos usados no seu script original)
+x0, xl = 500455.1000, 830455.1000
+y0, yl = 4381973.0000, 4821973.0000
+
+# -------------------------
+# Leitura do KVL
+# -------------------------
+
+with open(input_file, "r") as file:
+    lines = file.readlines()
+
+# remove linha "TOP ="
+data_lines = [line for line in lines if not line.strip().startswith("TOP")]
+
+# transforma em matriz
+data = []
+for line in data_lines:
+    values = line.strip().split()
+    if values:
+        data.append([float(v) for v in values])
+
+dataframe = pd.DataFrame(data)
+
+# desfaz inversão feita no script original
+dataframe = dataframe[::-1]
+
+# desfaz multiplicação por -1
+dataframe = dataframe * -1
+
+# substitui 0 por valor nulo padrão ZMAP
+dataframe = dataframe.replace(0, 1.000000e+30)
+
+ny, nx = dataframe.shape
+
+# -------------------------
+# Escrita ZMAP
+# -------------------------
+
+with open(output_file, "w") as file:
+
+    file.write("! Generated from KVL\n")
+    file.write(f"@Grid, {values_per_line}\n")
+
+    file.write(f"{ny}, {nx}, {x0}, {xl}, {y0}, {yl}\n")
+    file.write("@\n")
+
+    # escreve dados coluna por coluna (padrão ZMAP)
+    for col in range(nx):
+
+        column_values = dataframe.iloc[:, col].values
+
+        for i in range(0, len(column_values), values_per_line):
+
+            subset = column_values[i:i+values_per_line]
+
+            line = " ".join(f"{v:.6e}" for v in subset)
+
+            file.write(line + "\n")
+
+print("Conversão concluída.")
