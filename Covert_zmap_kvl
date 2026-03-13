@@ -1,0 +1,91 @@
+"""
+This file was created to read .dat files exported from Dionisos or Petrel that contain properties map or horizon maps
+and transform that information into .kvl files that needed to be used as input in SedSimple softawe.
+
+Created by Endriw Rafael,
+Petroleum Engineer
+Forward Team
+"""
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib import colors
+import math
+
+file_path = r"C:\Users\52598542843\Documents\Bat_UniA"
+x0, xl = 500455.1000, 830455.1000
+y0, yl = 4381973.0000, 4821973.0000
+
+with open(file_path, "r") as file:
+    lines = file.readlines()
+
+# Encontra o valor numérico correspondente a quantidade de pontos por linha no arquivo
+grid_header_line = next(line for line in lines if line.strip().startswith("@Grid"))
+line_value = int(grid_header_line.split(',')[-1].strip())
+
+# Encontra o índice onde os dados começam a partir do marcador '@'
+data_start_index = next(i for i, line in enumerate(lines) if line.strip() == "@")
+
+# Encontra a quantidade de pontos em x e y
+header_line = lines[data_start_index - 2]
+parts = header_line.replace(",", " ").split()
+val_y, val_x = int(parts[0]), int(parts[1])
+
+data_start_index = next(i for i, line in enumerate(lines) if line.strip() == "@") + 1
+points_x, line_y = val_x+1, math.ceil(val_y/line_value)
+
+data_values = []
+for line in lines[data_start_index:]:
+    row = line.strip().split()
+    data_values.append(row)
+
+coordinates_x = [x for x in range(1, val_x+1)]
+
+count = 1
+count_lines = 0
+coord_x = 0
+dict_data = {
+    x_value: [] for x_value in coordinates_x
+}
+while True:
+    data = data_values[count_lines]
+
+    for value in data:
+        dict_data[coordinates_x[coord_x]].append(float(value))
+
+    if count == line_y:
+        coord_x += 1
+        count = 1
+        count_lines += 1
+    else:
+        count += 1
+        count_lines += 1
+
+    if count_lines >= len(data_values):
+        break
+
+dataframe = pd.DataFrame(dict_data)
+dataframe = dataframe[::] * -1
+dataframe = dataframe.replace(1.000000e+30, 0)
+
+# Criando arquivo
+output_file = r"C:\Users\52598542843\Documents\Sedsimple\sedsimple\Models\GreenRiver\input\SS\maps\ISC\Bat_UniA.kvl"
+with open(output_file, 'w') as file:
+    file.write('TOP = \n')
+    dataframe[::-1].to_string(file, header=False, index=False)
+
+plt.imshow(
+    dataframe,
+    extent=(x0, xl, y0, yl),
+    origin='upper',
+    interpolation='bicubic',
+    norm=colors.Normalize(vmin=dataframe.min().min(), vmax=dataframe.max().max()),
+    cmap='rainbow_r'
+)
+plt.colorbar().ax.tick_params(labelsize=14, labelcolor='black')
+plt.xlabel('X [m]')
+plt.ylabel('Y [m]')
+plt.ticklabel_format(axis='y', style='plain')
+plt.title('Mapa de batimetria UniA')
+plt.show()
+
+print(dataframe)
