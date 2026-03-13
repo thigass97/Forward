@@ -1,0 +1,325 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
+from matplotlib.colors import ListedColormap
+from abc import ABC
+import math
+
+
+class Properties(ABC):
+    def __init__(self):
+        pass
+
+    def plot_map(self):
+        for prop, value in self.__dict__.items():
+            if isinstance(value, pd.DataFrame):
+                min_value = 0
+                if prop not in self.sed_ids_colors:
+                    min_value = 0
+                    max_value = 1
+                else:
+                    if prop == "THICKNESS":
+                        min_value = 0
+                    max_value = self.sed_ids_colors[prop]
+
+                # Colormap personalizado
+                img = Image.open(r"C:\Users\52598542843\Documents\Sedsimple\cor.png").convert('RGB')
+                img_np = np.array(img)
+                x_center = img_np.shape[1] // 2
+                color_column = img_np[:, x_center, :]
+                colors = np.unique(color_column, axis=0)
+                colors_norm = colors / 255.0
+                custom_cmap = ListedColormap(colors_norm, name='custom_colormap')
+
+                # Células com valor médio
+                cell_data = 0.25 * (
+                        value.astype(float).values[:-1, :-1] +
+                        value.astype(float).values[1:, :-1] +
+                        value.astype(float).values[:-1, 1:] +
+                        value.astype(float).values[1:, 1:]
+                )
+
+                # Coordenadas originais
+                x_nodes = value.columns.to_numpy(dtype=float)
+                y_nodes = value.index.to_numpy(dtype=float)
+                dx = np.diff(x_nodes)[0]
+                dy = np.diff(y_nodes)[0]
+
+                X, Y = np.meshgrid(x_nodes, y_nodes)
+
+                # Margens
+                margin_x = 4
+                margin_y = .5
+                x_full = np.arange(x_nodes[0] - margin_x * dx, x_nodes[-1] + (margin_x + 1) * dx, dx)
+                y_full = np.arange(y_nodes[0] - margin_y * dy, y_nodes[-1] + (margin_y + 1) * dy, dy)
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+
+                # Grid externo (somente moldura visual)
+                for i in range(len(x_full) - 1):
+                    for j in range(len(y_full) - 1):
+                        x0, x1 = x_full[i], x_full[i + 1]
+                        y0, y1 = y_full[j], y_full[j + 1]
+                        ax.add_patch(
+                            patches.Rectangle((x0, y0), x1 - x0, y1 - y0,
+                                              linewidth=0, edgecolor='none', facecolor='none')
+                        )
+
+                # Plot central do mapa
+                extent = (x_nodes[0], x_nodes[-1], y_nodes[0], y_nodes[-1])
+                # c = ax.imshow(cell_data[::-1], origin='upper', cmap=custom_cmap,
+                #               extent=extent, vmin=min_value, vmax=max_value)
+                levels_ = np.linspace(min_value, max_value, 16)
+                c = ax.contourf(X, Y, value.astype(float), levels=levels_, cmap=custom_cmap, vmin=min_value, vmax=max_value)
+
+                # Poços
+                for well, (x, y) in self.wells.items():
+                    ax.plot(x, y, "o", color="black", markersize=5)
+                    ax.text(x, y, well, color="magenta", fontsize=12, fontweight="bold")
+
+                # # Borda vermelha do mapa
+                # ax.add_patch(
+                #     patches.Rectangle(
+                #         (x_nodes[0], y_nodes[0]),
+                #         x_nodes[-1] - x_nodes[0],
+                #         y_nodes[-1] - y_nodes[0],
+                #         linewidth=2, edgecolor='red', facecolor='none'
+                #     )
+                # )
+
+                # Barra de cores
+                cb = fig.colorbar(c, ax=ax, shrink=0.8)
+                cb.set_label(f"{prop} (Sediment Proportion [/])")
+
+                # Ajusta os limites e remove labels
+                ax.set_xlim(x_full[0], x_full[-1])
+                ax.set_ylim(y_full[0], y_full[-1])
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+                ax.tick_params(axis='both', which='both', direction='in', labelsize=8)
+
+                x_ticks = x_full[4::8]
+                y_ticks = y_full[4::8]
+
+                # Reduz a quantidade de valores nos eixos
+                ax.set_xticks(x_full[4::8])
+                ax.set_yticks(y_full[4::8])
+                ax.set_xticklabels([f"{int(x):,}" for x in x_full[4::8]], rotation=0, fontsize=10)
+                ax.set_yticklabels([f"{int(y):,}" for y in y_full[4::8]], rotation=90, fontsize=10)
+
+                # Ticks superiores
+                ax.tick_params(top=True, labeltop=True)
+                ax.set_xticks(x_ticks, minor=False)
+                ax.set_xticklabels([f"{int(x):,}" for x in x_ticks], rotation=0, fontsize=10)
+
+                # Ticks à direita
+                ax.tick_params(right=True, labelright=True)
+                ax.set_yticks(y_ticks, minor=False)
+                ax.set_yticklabels([f"{int(y):,}" for y in y_ticks], rotation=90, fontsize=10)
+
+                ax.grid(False)
+
+                plt.tight_layout()
+                plt.show()
+
+
+class SSTimeData:
+    def __init__(self):
+        pass
+
+
+class SSAverageMap(Properties):
+    def __init__(self, sed_colors, wells):
+        super().__init__()
+        self.sed_ids_colors = sed_colors
+        self.wells = wells
+
+    def get_propthickness(self):
+        dict_new_variables = {}
+        max_value_thick = 0
+        for key, value in self.__dict__.items():
+            if key != "THICKNESS" and isinstance(value, pd.DataFrame):
+                product_name = f"{key}_THICKNESS"
+                product_var = value * self.THICKNESS if hasattr(self, "THICKNESS") else None
+                dict_new_variables[product_name] = product_var
+        for new_var, variable in dict_new_variables.items():
+            max_var = variable.max().max()
+            max_value_thick = max_var if max_var > max_value_thick else max_value_thick
+            setattr(self, new_var, variable)
+        setattr(self, "max_value_for_thickness_sed", max_value_thick)
+
+
+class GPMData(Properties):
+    def __init__(self, filepath, sed_colors, wells, domain, **kwargs):
+        super().__init__()
+        self.path = filepath
+        self.sed_ids_colors = sed_colors
+        self.wells = wells
+        self.index_df = domain[0]
+        self.column_df = domain[1]
+        if kwargs:
+            self.x0 = kwargs["x0"]
+            self.y0 = kwargs["y0"]
+
+    def get_data(self):
+        df = pd.read_csv(
+            self.path,
+            delim_whitespace=True,
+            header=0,
+            skiprows=0
+        )
+
+        x_coord = df["X[m]"].values
+        y_coord = df["Y[m]"].values
+        thickkness_values = df["Thickness[m]"]
+
+        x_coord_grid = np.unique(x_coord)
+        y_coord_grid = np.unique(y_coord)
+
+        thickness_grid = np.zeros((len(y_coord_grid), len(x_coord_grid)))
+        for k in range(len(thickkness_values)):
+            xi = np.where(x_coord_grid == x_coord[k])[0][0]
+            yi = np.where(y_coord_grid == y_coord[k])[0][0]
+            thickness_grid[yi, xi] = thickkness_values[k]
+
+        thickness_gpm_df = pd.DataFrame(thickness_grid)  #[::-1]
+        thickness_gpm_df = thickness_gpm_df.loc[::2, ::2]
+        # thickness_gpm_df = thickness_gpm_df.set_index(self.index_df[:-1])
+        thickness_gpm_df = thickness_gpm_df.set_index(y_coord_grid[::2])
+        # thickness_gpm_df.columns = self.column_df[:-1]
+        thickness_gpm_df.columns = x_coord_grid[::2]
+        setattr(self, "THICKNESS", thickness_gpm_df)
+
+
+# Arquivo
+path = r"C:\Users\52598542843\Documents\Sedsimple\sedsimple\Models\GreenRiver\output\SS\GreenRiver_ISC_UniA_output.kvl"
+# gpm_path = r"C:\Users\04099305201\Desktop\TCC\thickness_gpm_normal"
+# dio_path = r"C:\Users\04099305201\Desktop\TCC\thickness_dionisos.plo"
+
+# Dominio
+x0 = 500455.1
+y0 = 4381973.
+dx, dy = 10000, 10000
+nx, ny = 33, 44
+index_df = np.linspace(y0, y0 + dy * ny, ny+1)
+columns_df = np.linspace(x0, x0 + dx * nx, nx+1)
+dframe_i = pd.DataFrame(
+    index=index_df,
+    columns=columns_df
+)
+
+# Tempo de simulação
+start = -52500.
+end = -51900.
+
+# Sedimentos
+sed_ids = [
+    "SED1", "SED2", "SED3", "SED4", "SED5", "THICKNESS"
+]
+
+sed_ids_colors = {
+    "THICKNESS": 100,
+    "SED1_THICKNESS": 40,
+    "SED2_THICKNESS": 40,
+    "SED3_THICKNESS": 40,
+    "SED4_THICKNESS": 40,
+    "SED5_THICKNESS": 40
+}
+
+# Poços
+wells_ = {
+    "well1": (597617.6250, 4677335.31250),
+    "well2": (609700.6875, 4585758.68750),
+    "well3": (648493.5000, 4541878.21875),
+    "well4": (709544.6250, 4506265.09375),
+}
+
+# Extração de dados -- GPM
+# gpm_data = GPMData(filepath=gpm_path, sed_colors=sed_ids_colors, wells=wells_, domain=[index_df, columns_df])
+# gpm_data.get_data()
+
+# dio_data = GPMData(filepath=dio_path, sed_colors=sed_ids_colors, wells=wells_, domain=[index_df, columns_df])
+# dio_data.get_data()
+
+# Extração de dados -- SedSimple
+data_sim = {}
+with open(path, 'r') as file:
+    current_time = None
+    new_section = None
+    new_prop = None
+
+    for line in file:
+        line = line.strip()
+
+        if line.startswith("TIME ="):
+            current_time = float(line.split("=")[1].strip())
+            current_time = start if math.isclose(current_time, 0, abs_tol=1e-20) else current_time
+            data_sim[current_time] = SSTimeData()
+            new_section = True
+            continue
+
+        if new_section:
+            if line.startswith("SEALEVEL ="):
+                data_sim[current_time].sealevel = float(line.split("=")[1].strip())
+                continue
+            elif " =" in line:
+                new_prop = line.split(" =")[0]
+                data_lines = []
+                dframe_prop = dframe_i.copy()
+                new_section = False
+                continue
+
+        if new_prop:
+            if line.strip() != "":
+                try:
+                    data_lines.append(
+                        [float(value) for value in line.split()]
+                    )
+                except ValueError as e:
+                    data_lines = data_lines  # [::-1]
+                    for idx, val in zip(dframe_prop.index, data_lines):
+                        dframe_prop.loc[idx] = val
+                    setattr(data_sim[current_time], f"{new_prop}", dframe_prop.copy())
+                    new_prop = line.split(" =")[0]
+                    new_section = False
+                    data_lines = []
+                    dframe_prop = dframe_i.copy()
+            else:
+                data_lines = data_lines  # [::-1]
+                for idx, val in zip(dframe_prop.index, data_lines):
+                    dframe_prop.loc[idx] = val
+                setattr(data_sim[current_time], f"{new_prop}", dframe_prop.copy())
+                new_prop = False
+                new_section = True
+
+
+data_map = SSAverageMap(sed_colors=sed_ids_colors, wells=wells_)
+sorted_times = sorted(data_sim.keys())
+t_prev = sorted_times[0]
+t_curr = sorted_times[-1]
+top_prev = getattr(data_sim[t_prev], "TOP")
+top_curr = getattr(data_sim[t_curr], "TOP")
+thickness = top_curr - top_prev
+setattr(data_map, "THICKNESS", thickness)
+
+for idx in data_map.THICKNESS.index:
+    for col in data_map.THICKNESS.columns:
+        data_map.THICKNESS.loc[idx, col] = data_map.THICKNESS.loc[idx, col] if data_map.THICKNESS.loc[idx, col] >= 0. else 0.
+
+for s_id in sed_ids:
+    sed_dfs = [
+        getattr(obj, s_id) for obj in data_sim.values() if hasattr(obj, s_id)
+    ]
+
+    if sed_dfs:
+        average_df = sum(sed_dfs) / len(sed_dfs)
+        setattr(data_map, s_id, average_df)
+
+data_map.get_propthickness()
+
+# plot
+# gpm_data.plot_map()
+# dio_data.plot_map()
+data_map.plot_map()
